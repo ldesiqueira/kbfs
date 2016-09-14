@@ -4502,6 +4502,9 @@ func (fbo *folderBranchOps) backgroundFlusher(betweenFlushes time.Duration) {
 				})
 			// Just in case network access or a bug gets stuck for a
 			// long time, time out the sync eventually.
+			//
+			// XXX: this timeout isn't replayed after it's passed in
+			// to Sync!
 			longCtx, longCancel :=
 				context.WithTimeout(ctx, backgroundTaskTimeout)
 			defer longCancel()
