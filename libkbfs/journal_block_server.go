@@ -101,4 +101,5 @@ func (j journalBlockServer) ArchiveBlockReferences(
 
 func (j journalBlockServer) Shutdown() {
 	j.jServer.shutdown()
+	j.BlockServer.Shutdown()
 }
