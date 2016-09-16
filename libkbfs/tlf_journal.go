@@ -153,8 +153,7 @@ func makeTLFJournal(
 	dir string, tlfID TlfID, config tlfJournalConfig,
 	delegateBlockServer BlockServer, bws TLFJournalBackgroundWorkStatus,
 	bwDelegate tlfJournalBWDelegate, onBranchChange branchChangeListener,
-	onMDFlush mdFlushListener) (
-	*tlfJournal, error) {
+	onMDFlush mdFlushListener) (*tlfJournal, error) {
 	if currentUID == keybase1.UID("") {
 		return nil, errors.New("Empty UID")
 	}
@@ -172,16 +171,13 @@ func makeTLFJournal(
 		return nil, err
 	}
 
-	mdJournal, err := makeMDJournal(
-		currentUID, currentVerifyingKey,
+	mdJournal, err := makeMDJournal(currentUID, currentVerifyingKey,
 		config.Codec(), config.Crypto(), tlfDir, log)
 	if err != nil {
 		return nil, err
 	}
 
 	j := &tlfJournal{
-		uid:                 currentUID,
-		key:                 currentVerifyingKey,
 		tlfID:               tlfID,
 		config:              config,
 		delegateBlockServer: delegateBlockServer,
@@ -548,23 +544,19 @@ func (j *tlfJournal) flushBlockEntries(
 }
 
 func (j *tlfJournal) getNextMDEntryToFlush(ctx context.Context,
-	currentUID keybase1.UID, currentVerifyingKey VerifyingKey,
-	end MetadataRevision) (
-	MdID, *RootMetadataSigned, error) {
+	end MetadataRevision) (MdID, *RootMetadataSigned, error) {
 	j.journalLock.RLock()
 	defer j.journalLock.RUnlock()
 	if err := j.checkShutdownLocked(); err != nil {
 		return MdID{}, nil, err
 	}
 
-	return j.mdJournal.getNextEntryToFlush(
-		ctx, currentUID, currentVerifyingKey, end, j.config.Crypto())
+	return j.mdJournal.getNextEntryToFlush(ctx, end, j.config.Crypto())
 }
 
 func (j *tlfJournal) convertMDsToBranchAndGetNextEntry(
-	ctx context.Context, currentUID keybase1.UID,
-	currentVerifyingKey VerifyingKey,
-	nextEntryEnd MetadataRevision) (MdID, *RootMetadataSigned, error) {
+	ctx context.Context, nextEntryEnd MetadataRevision) (
+	MdID, *RootMetadataSigned, error) {
 	j.journalLock.Lock()
 	defer j.journalLock.Unlock()
 	if err := j.checkShutdownLocked(); err != nil {
@@ -572,8 +564,7 @@ func (j *tlfJournal) convertMDsToBranchAndGetNextEntry(
 	}
 
 	bid, err := j.mdJournal.convertToBranch(
-		ctx, currentUID, currentVerifyingKey, j.config.Crypto(),
-		j.tlfID, j.config.MDCache())
+		ctx, j.config.Crypto(), j.tlfID, j.config.MDCache())
 	if err != nil {
 		return MdID{}, nil, err
 	}
@@ -583,12 +574,11 @@ func (j *tlfJournal) convertMDsToBranchAndGetNextEntry(
 	}
 
 	return j.mdJournal.getNextEntryToFlush(
-		ctx, currentUID, currentVerifyingKey, nextEntryEnd,
+		ctx, nextEntryEnd,
 		j.config.Crypto())
 }
 
 func (j *tlfJournal) removeFlushedMDEntry(ctx context.Context,
-	currentUID keybase1.UID, currentVerifyingKey VerifyingKey,
 	mdID MdID, rmds *RootMetadataSigned) error {
 	j.journalLock.Lock()
 	defer j.journalLock.Unlock()
@@ -596,8 +586,7 @@ func (j *tlfJournal) removeFlushedMDEntry(ctx context.Context,
 		return err
 	}
 
-	return j.mdJournal.removeFlushedEntry(
-		ctx, currentUID, currentVerifyingKey, mdID, rmds)
+	return j.mdJournal.removeFlushedEntry(ctx, mdID, rmds)
 }
 
 func (j *tlfJournal) flushOneMDOp(
@@ -611,7 +600,7 @@ func (j *tlfJournal) flushOneMDOp(
 
 	mdServer := j.config.MDServer()
 
-	mdID, rmds, err := j.getNextMDEntryToFlush(ctx, j.uid, j.key, end)
+	mdID, rmds, err := j.getNextMDEntryToFlush(ctx, end)
 	if err != nil {
 		return false, err
 	}
@@ -641,7 +630,7 @@ func (j *tlfJournal) flushOneMDOp(
 			j.log.CDebugf(ctx, "Conflict detected %v", pushErr)
 			// Convert MDs to a branch and retry the put.
 			mdID, rmds, err = j.convertMDsToBranchAndGetNextEntry(
-				ctx, j.uid, j.key, end)
+				ctx, end)
 			if err != nil {
 				return false, err
 			}
@@ -663,7 +652,7 @@ func (j *tlfJournal) flushOneMDOp(
 			rmds.MD.RevisionNumber())
 	}
 
-	err = j.removeFlushedMDEntry(ctx, j.uid, j.key, mdID, rmds)
+	err = j.removeFlushedMDEntry(ctx, mdID, rmds)
 	if err != nil {
 		return false, err
 	}
@@ -864,7 +853,7 @@ func (j *tlfJournal) getMDHead(
 	}
 
 	// MDv3 TODO: pass actual key bundles
-	return j.mdJournal.getHead(j.uid, j.key, nil)
+	return j.mdJournal.getHead(nil)
 }
 
 func (j *tlfJournal) getMDRange(
@@ -877,7 +866,7 @@ func (j *tlfJournal) getMDRange(
 	}
 
 	// MDv3 TODO: pass actual key bundles
-	return j.mdJournal.getRange(j.uid, j.key, nil, start, stop)
+	return j.mdJournal.getRange(nil, start, stop)
 }
 
 func (j *tlfJournal) putMD(ctx context.Context, rmd *RootMetadata) (
@@ -888,7 +877,7 @@ func (j *tlfJournal) putMD(ctx context.Context, rmd *RootMetadata) (
 		return MdID{}, err
 	}
 
-	mdID, err := j.mdJournal.put(ctx, j.uid, j.key, j.config.Crypto(),
+	mdID, err := j.mdJournal.put(ctx, j.config.Crypto(),
 		j.config.encryptionKeyGetter(), j.config.BlockSplitter(), rmd)
 	if err != nil {
 		return MdID{}, err
@@ -912,7 +901,7 @@ func (j *tlfJournal) clearMDs(ctx context.Context, bid BranchID) error {
 
 	// No need to signal work in this case.
 	// MDv3 TODO: pass actual key bundles
-	return j.mdJournal.clear(ctx, j.uid, j.key, bid, nil)
+	return j.mdJournal.clear(ctx, bid, nil)
 }
 
 func (j *tlfJournal) wait(ctx context.Context) error {
